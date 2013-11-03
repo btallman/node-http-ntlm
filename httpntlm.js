@@ -40,3 +40,39 @@ exports.get = function(options, callback){
 	], callback);
 }
 
+exports.post = function(options, callback){
+	if(!options.workstation) options.workstation = '';
+	if(!options.domain) options.domain = '';
+
+	async.waterfall([
+		function ($){
+			var type1msg = ntlm.createType1Message(options);
+
+			httpreq.get(options.uri.href, {
+				headers:{
+					'Connection' : 'keep-alive',
+					'Authorization': type1msg
+				},
+				agent: keepaliveAgent
+			}, $);
+		},
+
+		function (res, $){
+			if(!res.headers['www-authenticate'])
+				return $(new Error('www-authenticate not found on response of second request'));
+
+			var type2msg = ntlm.parseType2Message(res.headers['www-authenticate']);
+			var type3msg = ntlm.createType3Message(type2msg, options);
+
+			options.headers['Connection'] = 'Close';
+			options.headers['Authorization'] = type3msg;
+			options.allowRedirects = false;
+			options.agent = keepaliveAgent;
+			httpreq.post(options.uri.href, options, $);
+		}
+	], function(err, response){
+		callback(err, response, response.body);
+	});
+}
+
+
